@@ -14,8 +14,22 @@ typedef struct _ASYNC_READ
 VOID CALLBACK ReadCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
 {
 	PASYNC_READ pAsyncRead = (PASYNC_READ)lpOverlapped;
-	printf(pAsyncRead->pszBuffer);
+	unsigned char* ppb = pAsyncRead->pszBuffer;
+	UINT8 p1 = ppb[26];
+	UINT8 p2 = ppb[27];
+	UINT8 p3 = ppb[28];
+	UINT8 p4 = ppb[29];
+	
+	UINT8 p5 = ppb[30];
+	UINT8 p6 = ppb[31];
+	UINT8 p7 = ppb[32];
+	UINT8 p8 = ppb[33];
+
+	printf("source ip address: %d.%d.%d.%d destination ip address: %d.%d.%d.%d", p1, p2, p3, p4, p5, p6, p7, p8);
+
 	printf("\r\n");
+
+	memset(pAsyncRead->pszBuffer, 0, 1500);
 	ReadFileEx(pAsyncRead->hfiler, pAsyncRead->pszBuffer, pAsyncRead->uiSize - 1, (LPOVERLAPPED)pAsyncRead, ReadCompletionRoutine);
 }
 

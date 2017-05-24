@@ -114,7 +114,7 @@ Return Value:
 {
 	WPP_INIT_TRACING(DriverObject, RegistryPath);
 	CreateFilterList();
-	CreateFilterDevice(DriverObject);
+//	CreateFilterDevice(DriverObject);
     NDIS_STATUS Status;
     NDIS_FILTER_DRIVER_CHARACTERISTICS      FChars;
     NDIS_STRING ServiceName  = RTL_CONSTANT_STRING(FILTER_SERVICE_NAME);
@@ -785,7 +785,7 @@ Return Value:
     FILTER_FREE_LOCK(&FilterListLock);
 
     DEBUGP(DL_TRACE, "<===FilterUnload\n");
-	ReleaseFilterDevice(DriverObject);
+//	ReleaseFilterDevice(DriverObject);
 	WPP_CLEANUP(DriverObject->DeviceObject);
     return;
 
@@ -1493,7 +1493,7 @@ Arguments:
 
 }
 
-NTSTATUS UseFilterContext()
+NTSTATUS UseFilterContext(BYTE* pData, UINT32 bytes)
 {
 	NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
 	KIRQL kOldIrql;
@@ -1518,7 +1518,7 @@ NTSTATUS UseFilterContext()
 			pReadDataBuffer = (PCHAR)pIrp->AssociatedIrp.SystemBuffer;
 			if (pReadDataBuffer && pIoStackIrp->Parameters.Read.Length > 0)
 			{
-				RtlCopyMemory(pReadDataBuffer, "hello from filter", sizeof("hello from filter"));
+				RtlCopyMemory(pReadDataBuffer, pData, bytes);
 			}
 		}
 #endif
@@ -1558,11 +1558,62 @@ NTSTATUS UseFilterContext()
 		}
 #endif
 		pIrp->IoStatus.Status = STATUS_SUCCESS;
-		pIrp->IoStatus.Information = sizeof("hello from filter");
+		pIrp->IoStatus.Information = bytes;
 		IoCompleteRequest(pIrp, IO_NETWORK_INCREMENT);
 	}
 
 	return NtStatus;
+}
+
+_IRQL_requires_min_(PASSIVE_LEVEL)
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_same_
+_Success_(return != 0)
+CapturePacket(_In_opt_ NET_BUFFER_LIST* pTemplateNBL,
+	_Out_ UINT32* pSize,
+	_In_ UINT32 additionalSpace)             /* 0 */
+{
+
+		if (pTemplateNBL)
+		{
+			NET_BUFFER* pNB = NET_BUFFER_LIST_FIRST_NB(pTemplateNBL);
+
+			for (;
+				pNB;
+				pNB = NET_BUFFER_NEXT_NB(pNB))
+			{
+				BYTE*  pContiguousBuffer = 0;
+				BYTE*  pAllocatedBuffer = 0;
+				UINT32 bytesNeeded = NET_BUFFER_DATA_LENGTH(pNB);
+
+				if (bytesNeeded)
+				{
+					HLPR_NEW_ARRAY(pAllocatedBuffer,
+						BYTE,
+						bytesNeeded,
+						WFPSAMPLER_SYSLIB_TAG);
+
+
+					if (pAllocatedBuffer)
+					{
+						pContiguousBuffer = (BYTE*)NdisGetDataBuffer(pNB,
+							bytesNeeded,
+							pAllocatedBuffer,
+							1,
+							0);
+
+
+						UseFilterContext(pContiguousBuffer ? pContiguousBuffer : pAllocatedBuffer, bytesNeeded);
+
+						HLPR_DELETE_ARRAY(pAllocatedBuffer,
+							WFPSAMPLER_SYSLIB_TAG);
+					}
+
+				}
+			}
+		}
+
+	return;
 }
 
 _Use_decl_annotations_
@@ -1677,7 +1728,8 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
         // deep copy, and return the original NBL.
         //
 
-		UseFilterContext();
+		UINT32 size = 0;
+		CapturePacket(NetBufferLists, &size, 0);
 
         if (pFilter->TrackReceives)
         {

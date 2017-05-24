@@ -3,6 +3,7 @@
 #include <filteruser.h>
 #include "flt_dbg.h"
 #include "filter.h"
+#include <ntintsafe.h>
 
 // {6EC8ECB0-B1A4-4B66-B605-F7CB6E68926C}
 //static const GUID << name >> =
@@ -32,9 +33,60 @@ typedef struct _IRPLISTHEAD
 	PIRPLIST pListFront;
 } IRPLISTHEAD, *PIRPLISTHEAD;
 
+typedef UCHAR BYTE;
+
 extern KSPIN_LOCK kspIrpListLock;
 extern PIRPLISTHEAD pIrpList;
 
 //#define _USE_DIRECT_IO_
 //#define _USE_NEITHER_IO_
 #define _USE_BUFFER_IO_
+
+#define HLPR_NEW_ARRAY(pPtr, object, count, tag)               \
+   for(;                                                       \
+       pPtr == 0;                                              \
+      )                                                        \
+   {                                                           \
+      size_t SAFE_SIZE = 0;                                    \
+      if(count &&                                              \
+         RtlSizeTMult(sizeof(object),                          \
+                      (size_t)count,                           \
+                      &SAFE_SIZE) == STATUS_SUCCESS &&         \
+         SAFE_SIZE >= (sizeof(object) * count))                \
+      {                                                        \
+         pPtr = (object*)ExAllocatePoolWithTag(NonPagedPoolNx, \
+                                               SAFE_SIZE,      \
+                                               tag);           \
+         if(pPtr)                                              \
+            RtlZeroMemory(pPtr,                                \
+                          SAFE_SIZE);                          \
+      }                                                        \
+      else                                                     \
+      {                                                        \
+         pPtr = 0;                                             \
+         break;                                                \
+      }                                                        \
+   }
+
+#define WFPSAMPLER_SYSLIB_TAG         (UINT32)'LSSW'
+
+#define HLPR_BAIL_ON_ALLOC_FAILURE_WITH_LABEL(pPtr, status, label) \
+   if(pPtr == 0)                                                   \
+   {                                                               \
+      status = (UINT32)STATUS_NO_MEMORY;                           \
+      goto label;                                                  \
+   }
+
+#define HLPR_BAIL_ON_ALLOC_FAILURE(pPtr, status)                        \
+   HLPR_BAIL_ON_ALLOC_FAILURE_WITH_LABEL(pPtr, status, HLPR_BAIL_LABEL)
+
+#define HLPR_DELETE(pPtr, tag)       \
+   if(pPtr)                          \
+   {                                 \
+      ExFreePoolWithTag((VOID*)pPtr, \
+                        tag);        \
+      pPtr = 0;                      \
+   }
+
+#define HLPR_DELETE_ARRAY(pPtr, tag) \
+   HLPR_DELETE(pPtr, tag)

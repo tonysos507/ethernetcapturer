@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <conio.h>
+#include <WinSock2.h>
+#pragma comment(lib, "ws2_32.lib")
 
 typedef struct _ASYNC_READ
 {
@@ -34,8 +36,15 @@ VOID CALLBACK ReadCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTran
 			UINT16 srcPort = ppb[14 + 20];
 			srcPort = srcPort << 8;
 			srcPort += ppb[14 + 20 + 1];
-			printf("Inbound: %d.%d.%d.%d[%d] ", p1, p2, p3, p4, srcPort);
-//			printf("source ip address: %d.%d.%d.%d destination ip address: %d.%d.%d.%d", p1, p2, p3, p4, p5, p6, p7, p8);
+			UINT16 dstPort = ppb[14 + 20 + 2];
+			dstPort = dstPort << 8;
+			dstPort += ppb[14 + 20 + 3];
+			struct servent *pReceiver = 0;
+			pReceiver = getservbyport(htons(dstPort), NULL);
+			if(pReceiver)
+				printf("Inbound=>%s: %d.%d.%d.%d[%d] ", pReceiver->s_name, p1, p2, p3, p4, srcPort);
+			else
+				printf("Inbound=>%d: %d.%d.%d.%d[%d] ", dstPort, p1, p2, p3, p4, srcPort);
 			printf("\r\n");
 		}
 	}
